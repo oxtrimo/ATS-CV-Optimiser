@@ -24,8 +24,11 @@ function KeywordCard({ item, isCritical }) {
 
   const [showAlign, setShowAlign] = useState(false);
   const [userText, setUserText] = useState(contextualData?.user_context || '');
-  const [alignLoading, setAlignLoading] = useState(false);
-  const [alignmentResult, setAlignmentResult] = useState(contextualData?.alignment_result || null);
+
+  // Keep userText synchronized if contextualData changes
+  React.useEffect(() => {
+    setUserText(contextualData?.user_context || '');
+  }, [contextualData?.user_context]);
 
   // Fetch explanation (Tier B)
   const handleToggleExplain = async (e) => {
@@ -51,49 +54,26 @@ function KeywordCard({ item, isCritical }) {
     }
   };
 
-  // Analyze experience (Tier C)
-  const handleAnalyzeExperience = async (e) => {
+  // Instantly save candidate note for end-of-flow holistic CV compilation
+  const handleSaveExperience = (e) => {
     e.stopPropagation();
     if (!userText.trim()) return;
-    setAlignLoading(true);
-    try {
-      const res = await fetch('/api/keywords/align', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionId,
-          keyword: kw,
-          user_experience: userText.trim(),
-        }),
-      });
-      const data = await res.json();
-      setAlignmentResult(data);
-    } catch (err) {
-      console.error('Align error:', err);
-    } finally {
-      setAlignLoading(false);
-    }
-  };
-
-  // Confirm transferable experience
-  const handleConfirmAlignment = (e) => {
-    e.stopPropagation();
-    if (!alignmentResult) return;
     setContextualKeyword(kw, {
       keyword: kw,
       user_context: userText.trim(),
-      suggested_bullet: alignmentResult.suggested_bullet,
-      alignment_type: alignmentResult.alignment_type,
-      is_aligned: alignmentResult.is_aligned,
-      alignment_result: alignmentResult,
     });
+    setShowAlign(false);
+  };
+
+  const handleCancel = (e) => {
+    e.stopPropagation();
+    setUserText(contextualData?.user_context || '');
     setShowAlign(false);
   };
 
   const handleRemoveContext = (e) => {
     e.stopPropagation();
     removeContextualKeyword(kw);
-    setAlignmentResult(null);
     setUserText('');
   };
 
@@ -129,7 +109,7 @@ function KeywordCard({ item, isCritical }) {
 
               {hasContextual && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                  <CheckCircle2 size={10} /> Experience Linked
+                  <CheckCircle2 size={10} /> Experience Note Added
                 </span>
               )}
 
@@ -148,13 +128,13 @@ function KeywordCard({ item, isCritical }) {
 
             {hasContextual && (
               <p className="text-xs text-emerald-400/90 mt-1 italic line-clamp-2">
-                "{contextualData.suggested_bullet || contextualData.user_context}"
+                "{contextualData.user_context}"
               </p>
             )}
           </div>
         </div>
 
-        {/* Action pills: Tier B & Tier C buttons */}
+        {/* Action pills: Tier B & Note buttons */}
         <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
@@ -170,7 +150,7 @@ function KeywordCard({ item, isCritical }) {
 
           <button
             type="button"
-            title="Connect your actual experience to this keyword"
+            title="Add your notes/context on this keyword"
             onClick={() => setShowAlign(!showAlign)}
             className={`p-1.5 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors ${
               showAlign 
@@ -226,7 +206,7 @@ function KeywordCard({ item, isCritical }) {
         )}
       </AnimatePresence>
 
-      {/* Tier C: User Experience Alignment Workspace */}
+      {/* Experience Note Panel: Instant Capture for End-of-Flow Batch Compilation */}
       <AnimatePresence>
         {showAlign && (
           <motion.div
@@ -243,109 +223,43 @@ function KeywordCard({ item, isCritical }) {
                 </span>
                 {hasContextual && (
                   <button 
+                    type="button"
                     onClick={handleRemoveContext}
                     className="text-[11px] text-red-400 hover:text-red-300 flex items-center gap-0.5"
                   >
-                    <X size={12} /> Remove context
+                    <X size={12} /> Remove note
                   </button>
                 )}
               </div>
               <p className="text-[11px] text-slate-400 mb-2">
-                Describe in 1-2 sentences how you've used or encountered this concept. AI will evaluate alignment and construct an authentic CV bullet point.
+                Share a brief note about how you've used or encountered this concept. All your notes will be compiled with your CV at the rewrite stage to strengthen sentences holistically.
               </p>
               <textarea
                 value={userText}
                 onChange={(e) => setUserText(e.target.value)}
                 placeholder={`e.g. "I didn't use ${kw} specifically, but at my previous job I built a similar system using..."`}
-                className="w-full bg-surface-950/80 border border-purple-500/30 rounded-lg p-2.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-purple-400 resize-none h-18"
+                className="w-full bg-surface-950/80 border border-purple-500/30 rounded-lg p-2.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-purple-400 resize-none h-20"
               />
             </div>
 
             <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setShowAlign(false)}
+                onClick={handleCancel}
                 className="btn-ghost text-xs py-1 px-3"
               >
-                Close
+                Cancel
               </button>
               <button
                 type="button"
-                onClick={handleAnalyzeExperience}
-                disabled={alignLoading || !userText.trim()}
-                className="btn-primary text-xs py-1 px-3 bg-purple-600 hover:bg-purple-500 border-none flex items-center gap-1.5"
+                onClick={handleSaveExperience}
+                disabled={!userText.trim()}
+                className="btn-primary text-xs py-1 px-3 bg-purple-600 hover:bg-purple-500 border-none flex items-center gap-1.5 disabled:opacity-40"
               >
-                {alignLoading ? (
-                  <>
-                    <Loader2 size={13} className="animate-spin" />
-                    <span>Analyzing Alignment...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles size={13} />
-                    <span>Validate Alignment</span>
-                  </>
-                )}
+                <Check size={13} />
+                <span>{hasContextual ? 'Update Note' : 'Save Note'}</span>
               </button>
             </div>
-
-            {/* Alignment Evaluation Result */}
-            {alignmentResult && (
-              <div className={`p-3 rounded-lg border space-y-2 mt-2 ${
-                alignmentResult.is_aligned
-                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200'
-                  : 'bg-amber-950/40 border-amber-500/30 text-amber-200'
-              }`}>
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold flex items-center gap-1.5 text-xs">
-                    {alignmentResult.is_aligned ? (
-                      <>
-                        <CheckCircle2 size={14} className="text-emerald-400" />
-                        <span>Aligned ({alignmentResult.alignment_type})</span>
-                      </>
-                    ) : (
-                      <>
-                        <AlertCircle size={14} className="text-amber-400" />
-                        <span>Stretch / Unrelated</span>
-                      </>
-                    )}
-                  </span>
-                  {alignmentResult.recommended_section && (
-                    <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-white/10 text-slate-300">
-                      Add to: {alignmentResult.recommended_section}
-                    </span>
-                  )}
-                </div>
-
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  {alignmentResult.feedback}
-                </p>
-
-                {alignmentResult.suggested_bullet && (
-                  <div className="bg-surface-950/60 p-2.5 rounded border border-white/10 space-y-1">
-                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block">
-                      Proposed CV Bullet:
-                    </span>
-                    <p className="text-xs text-emerald-300 font-medium leading-relaxed">
-                      • {alignmentResult.suggested_bullet}
-                    </p>
-                  </div>
-                )}
-
-                {alignmentResult.is_aligned && (
-                  <div className="pt-1 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={handleConfirmAlignment}
-                      className="btn-primary text-xs py-1 px-3 bg-emerald-600 hover:bg-emerald-500 border-none flex items-center gap-1"
-                    >
-                      <Check size={13} />
-                      <span>Approve & Include in Rewrite</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -374,7 +288,7 @@ export default function KeywordSelector() {
           Missing ATS Keywords & Transferable Skills
         </h4>
         <p className="text-xs text-brand-300/80 leading-relaxed">
-          Select keywords you have experience with. Use <strong>Explain</strong> to see how a term is used in this role, or <strong>I have experience</strong> to describe your background and let AI weave your authentic story into the CV.
+          Select keywords you have experience with. Use <strong>Explain</strong> for role context, or <strong>I have experience</strong> to add notes on your background. All your notes will be compiled with your CV at rewrite to strengthen and refine sentences holistically.
         </p>
       </div>
 

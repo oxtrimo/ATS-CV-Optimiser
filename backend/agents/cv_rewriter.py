@@ -26,8 +26,9 @@ CRITICAL SYNTHESIS & ANTI-REPETITION RULES:
 3. STRICT ANTI-REPETITION & DE-DUPLICATION:
    - NEVER create multiple sentences or bullet points that cover the same topic, tool, or project.
    - If the candidate mentioned the same experience in multiple notes, or if the original CV already touches upon the project/topic, synthesize the information into a single concise mention.
-4. ENRICH EXISTING BULLETS WHERE POSSIBLE:
-   - Rather than appending new bullet points at the end of roles, identify the existing role, bullet, or skill in the original CV where the experience belongs and ENRICH that existing bullet with the keywords.
+4. REFINING & STRENGTHENING EXISTING CV SENTENCES:
+   - Compile the candidate's notes with the existing text in their CV.
+   - Rather than creating weak or separate new lines, refine their existing CV sentences to make them punchier, more professional, and significantly stronger, elevating overall impact while seamlessly weaving in the keywords they mentioned in their notes.
 5. {format_rule}
 6. Tone: {tone_desc}
 7. Use standard ATS-friendly section headings (Experience, Education, Skills, etc.).
