@@ -3,7 +3,7 @@ import useAppStore from '../store/useAppStore';
 import MatchScoreGauge from '../components/MatchScoreGauge';
 import LaTeXEditor from '../components/LaTeXEditor';
 import CoverLetterPanel from '../components/CoverLetterPanel';
-import { FileText, Download, RotateCcw, AlertTriangle } from 'lucide-react';
+import { FileText, Download, RotateCcw, AlertTriangle, Check } from 'lucide-react';
 
 export default function Step5_Results() {
   const { sessionId, gapData, rewriteResult, reset } = useAppStore();
@@ -94,6 +94,3 @@ export default function Step5_Results() {
     </div>
   );
 }
-
-// Ensure Check is imported since it's used in the JSX
-import { Check } from 'lucide-react';

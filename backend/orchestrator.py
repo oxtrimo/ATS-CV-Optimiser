@@ -103,8 +103,8 @@ def run_phase1(sid: str, cv_text: str, is_latex: bool,
     threading.Thread(target=_run, daemon=True).start()
 
 
-def run_phase2(sid: str, selected_keywords: list):
-    """Phase 2: rewrite CV + generate cover letter with user-chosen keywords."""
+def run_phase2(sid: str, selected_keywords: list, contextual_keywords: list = None):
+    """Phase 2: rewrite CV + generate cover letter (if requested) with user-chosen keywords."""
     with _lock:
         s = _sessions[sid]
         s["status"] = "running"
@@ -115,13 +115,15 @@ def run_phase2(sid: str, selected_keywords: list):
 
     tone  = preferences.get("tone", "balanced")
     style = preferences.get("coverLetterStyle", "professional")
+    gen_cover_letter = preferences.get("generateCoverLetter", True)
 
     def _run():
         try:
             # Agent 4 — CV Rewriter
             _push_event(sid, {"agent": "cv_rewriter", "status": "running"})
             rewrite_result = rewrite_cv(cv_text, cv_data, jd_data,
-                                        selected_keywords, tone)
+                                        selected_keywords, tone,
+                                        contextual_keywords=contextual_keywords)
             with _lock:
                 _sessions[sid]["rewrite_result"] = rewrite_result
             _push_event(sid, {"agent": "cv_rewriter", "status": "done",
@@ -130,13 +132,19 @@ def run_phase2(sid: str, selected_keywords: list):
                                    "keywords_added": rewrite_result.get("keywords_incorporated", []),
                                }})
 
-            # Agent 5 — Cover Letter
-            _push_event(sid, {"agent": "cover_letter", "status": "running"})
-            cl_result = generate_cover_letter(cv_data, jd_data, style)
-            with _lock:
-                _sessions[sid]["cover_letter_result"] = cl_result
-                _sessions[sid]["status"] = "complete"
-            _push_event(sid, {"agent": "cover_letter", "status": "done"})
+            # Agent 5 — Cover Letter (Conditional)
+            if gen_cover_letter:
+                _push_event(sid, {"agent": "cover_letter", "status": "running"})
+                cl_result = generate_cover_letter(cv_data, jd_data, style)
+                with _lock:
+                    _sessions[sid]["cover_letter_result"] = cl_result
+                    _sessions[sid]["status"] = "complete"
+                _push_event(sid, {"agent": "cover_letter", "status": "done", "data": cl_result})
+            else:
+                with _lock:
+                    _sessions[sid]["status"] = "complete"
+                _push_event(sid, {"agent": "cover_letter", "status": "skipped", "data": {"skipped": True}})
+
             _push_event(sid, {"agent": "pipeline", "status": "complete"})
 
         except Exception as e:
@@ -146,3 +154,21 @@ def run_phase2(sid: str, selected_keywords: list):
             _push_event(sid, {"agent": "pipeline", "status": "error", "error": str(e)})
 
     threading.Thread(target=_run, daemon=True).start()
+
+
+def generate_cover_letter_for_session(sid: str, style: str = None) -> dict:
+    """Generate cover letter on-demand for an existing session."""
+    with _lock:
+        s = _sessions.get(sid)
+        if not s:
+            return {"error": "Session not found"}
+        cv_data = s["cv_data"]
+        jd_data = s["jd_data"]
+        preferences = s["preferences"]
+
+    target_style = style or preferences.get("coverLetterStyle", "professional")
+    cl_result = generate_cover_letter(cv_data, jd_data, target_style)
+    with _lock:
+        _sessions[sid]["cover_letter_result"] = cl_result
+    return cl_result
+

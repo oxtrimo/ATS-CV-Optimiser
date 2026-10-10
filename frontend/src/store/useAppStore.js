@@ -27,9 +27,10 @@ const useAppStore = create((set, get) => ({
 
   // ── Preferences ──────────────────────────────────
   preferences: {
-    coverLetterStyle: 'professional',  // professional | conversational | technical
-    tone:             'balanced',      // formal | balanced | achievement
-    outputFormat:     'both',          // tex | pdf | both
+    generateCoverLetter: true,         // true | false
+    coverLetterStyle:    'professional',  // professional | conversational | technical
+    tone:                'balanced',      // formal | balanced | achievement
+    outputFormat:        'both',          // tex | pdf | both
   },
   setPreferences: (prefs) =>
     set((s) => ({ preferences: { ...s.preferences, ...prefs } })),
@@ -59,7 +60,7 @@ const useAppStore = create((set, get) => ({
   setJdData:  (d) => set({ jdData: d }),
   setGapData: (d) => set({ gapData: d }),
 
-  // ── Keyword selection ─────────────────────────────
+  // ── Keyword selection & Contextual alignment ─────
   selectedKeywords: [],
   setSelectedKeywords: (kws) => set({ selectedKeywords: kws }),
   toggleKeyword: (kw) =>
@@ -68,6 +69,20 @@ const useAppStore = create((set, get) => ({
         ? s.selectedKeywords.filter((k) => k !== kw)
         : [...s.selectedKeywords, kw],
     })),
+
+  contextualKeywords: {}, // { [keyword]: { keyword, user_context, suggested_bullet, is_aligned, alignment_type } }
+  setContextualKeyword: (kw, data) =>
+    set((s) => ({
+      contextualKeywords: { ...s.contextualKeywords, [kw]: data },
+      // automatically ensure it is in selectedKeywords if confirmed
+      selectedKeywords: s.selectedKeywords.includes(kw) ? s.selectedKeywords : [...s.selectedKeywords, kw]
+    })),
+  removeContextualKeyword: (kw) =>
+    set((s) => {
+      const next = { ...s.contextualKeywords };
+      delete next[kw];
+      return { contextualKeywords: next };
+    }),
 
   // ── Rewrite & cover letter results ────────────────
   rewriteResult:     {},
@@ -93,7 +108,7 @@ const useAppStore = create((set, get) => ({
       agentStates: { cv_parser: 'idle', jd_extractor: 'idle', gap_analyser: 'idle',
                      cv_rewriter: 'idle', cover_letter: 'idle' },
       cvData: {}, jdData: {}, gapData: {}, rewriteResult: {},
-      coverLetterResult: {}, editedLatex: '', selectedKeywords: [],
+      coverLetterResult: {}, editedLatex: '', selectedKeywords: [], contextualKeywords: {},
     }),
 }))
 

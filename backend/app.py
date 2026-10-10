@@ -5,7 +5,7 @@ import os
 import time
 import json
 import base64
-from flask import Flask, request, jsonify, Response, stream_with_context
+from flask import Flask, request, jsonify, Response, stream_with_context, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from config import Config
@@ -14,6 +14,7 @@ from utils.file_parser    import parse_file
 from utils.url_scraper    import scrape_job_url
 from utils.latex_compiler import compile_latex
 from agents.career_advisor import chat as advisor_chat
+from agents.keyword_advisor import explain_keyword, align_experience
 
 # ─── App setup ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -100,6 +101,7 @@ def pipeline_stream(sid: str):
         return jsonify({"error": "Session not found"}), 404
 
     def generate():
+        last_ping = time.time()
         while True:
             session = orch.get_session(sid)
             if not session:
@@ -107,10 +109,17 @@ def pipeline_stream(sid: str):
             events = orch.pop_events(sid)
             for ev in events:
                 yield f"data: {json.dumps(ev)}\n\n"
-            # Stop streaming once terminal state reached
-            if session["status"] in ("awaiting_keywords", "complete", "error"):
+
+            # Only stop streaming once a final terminal state is reached
+            if session["status"] in ("complete", "error"):
                 if not events:
                     break
+
+            # Periodic heartbeat ping to keep SSE connection alive during pauses
+            if time.time() - last_ping > 15:
+                yield ": keepalive\n\n"
+                last_ping = time.time()
+
             time.sleep(0.4)
 
     return Response(
@@ -123,19 +132,93 @@ def pipeline_stream(sid: str):
     )
 
 
+# ─── Pipeline: status check ───────────────────────────────────────────────────
+@app.get("/api/pipeline/status/<sid>")
+def pipeline_status(sid: str):
+    session = orch.get_session(sid)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
+    return jsonify({
+        "status": session.get("status", "idle"),
+        "error":  session.get("error"),
+    })
+
+
 # ─── Pipeline: resume (Phase 2) ───────────────────────────────────────────────
 @app.post("/api/pipeline/resume/<sid>")
 def pipeline_resume(sid: str):
     session = orch.get_session(sid)
     if not session:
         return jsonify({"error": "Session not found"}), 404
+
+    # If already running Phase 2, acknowledge idempotently without error
+    if session["status"] == "running":
+        return jsonify({"success": True, "status": "running", "message": "Pipeline already running"}), 200
+
     if session["status"] != "awaiting_keywords":
         return jsonify({"error": f"Pipeline is not paused (status: {session['status']})"}), 400
 
     body = request.get_json(silent=True) or {}
     selected_keywords = body.get("selected_keywords", [])
-    orch.run_phase2(sid, selected_keywords)
-    return jsonify({"success": True})
+    contextual_keywords = body.get("contextual_keywords", [])
+    orch.run_phase2(sid, selected_keywords, contextual_keywords=contextual_keywords)
+    return jsonify({"success": True, "status": "resumed"})
+
+
+# ─── Keyword Advisor: Explain in context ──────────────────────────────────────
+@app.post("/api/keywords/explain")
+def api_explain_keyword():
+    body = request.get_json(silent=True) or {}
+    keyword = body.get("keyword", "").strip()
+    sid = body.get("session_id")
+    if not keyword:
+        return jsonify({"error": "Keyword is required"}), 400
+
+    jd_data = body.get("jd_data") or {}
+    cv_data = body.get("cv_data") or {}
+    if sid:
+        session = orch.get_session(sid)
+        if session:
+            jd_data = session.get("jd_data") or jd_data
+            cv_data = session.get("cv_data") or cv_data
+
+    result = explain_keyword(keyword, jd_data, cv_data)
+    return jsonify(result)
+
+
+# ─── Keyword Advisor: Align user experience ──────────────────────────────────
+@app.post("/api/keywords/align")
+def api_align_experience():
+    body = request.get_json(silent=True) or {}
+    keyword = body.get("keyword", "").strip()
+    user_exp = body.get("user_experience", "").strip()
+    sid = body.get("session_id")
+    if not keyword or not user_exp:
+        return jsonify({"error": "Both keyword and user_experience are required"}), 400
+
+    jd_data = body.get("jd_data") or {}
+    cv_data = body.get("cv_data") or {}
+    if sid:
+        session = orch.get_session(sid)
+        if session:
+            jd_data = session.get("jd_data") or jd_data
+            cv_data = session.get("cv_data") or cv_data
+
+    result = align_experience(keyword, user_exp, jd_data, cv_data)
+    return jsonify(result)
+
+
+# ─── Generate Cover Letter on-demand ─────────────────────────────────────────
+@app.post("/api/generate-cover-letter/<sid>")
+def api_generate_cover_letter(sid: str):
+    session = orch.get_session(sid)
+    if not session:
+        return jsonify({"error": "Session not found"}), 404
+    body = request.get_json(silent=True) or {}
+    style = body.get("style")
+    result = orch.generate_cover_letter_for_session(sid, style)
+    return jsonify(result)
+
 
 
 # ─── Pipeline: get results ────────────────────────────────────────────────────
@@ -193,6 +276,26 @@ def chat():
     return jsonify({"reply": reply})
 
 
+# ─── Serve Frontend ───────────────────────────────────────────────────────────
+DIST_DIR = os.path.join(os.path.dirname(__file__), "dist")
+if not os.path.exists(DIST_DIR):
+    DIST_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
+
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_frontend(path):
+    if path != "" and os.path.exists(os.path.join(DIST_DIR, path)):
+        return send_from_directory(DIST_DIR, path)
+    if os.path.exists(os.path.join(DIST_DIR, "index.html")):
+        return send_from_directory(DIST_DIR, "index.html")
+    return jsonify({
+        "status": "online",
+        "service": "ATS CV Optimizer API",
+        "message": "Backend API is running. Frontend static build not found."
+    }), 200
+
+
 # ─── Entry point ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     app.run(debug=Config.DEBUG, port=5000)
+
